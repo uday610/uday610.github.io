@@ -1,0 +1,5 @@
+---
+title: "About"
+---
+
+Welcome! I'm Uday. This site is where I share technical writeups, notes, and things I learn along the way.
