@@ -4,4 +4,3 @@ title: "About"
 
 I'm Uday Das, Product engineer at AMD. This site is my personal space for technical writeups and notes.
 
-P.S: Views and opinions are my own, not my employer's
