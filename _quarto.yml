@@ -3,7 +3,7 @@ project:
   output-dir: docs
 
 website:
-  title: "Uday's Technical Writeups"
+  title: "Uday Das: Technical Writeups"
   navbar:
     left:
       - href: index.qmd
