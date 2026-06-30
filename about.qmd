@@ -2,4 +2,6 @@
 title: "About"
 ---
 
-Welcome! I'm Uday. This site is where I share technical writeups, notes, and things I learn along the way.
+I'm Uday Das, an Product engineer at AMD. This site is my personal space for technical writeups and notes -- things I learn, experiment with, or find worth documenting along the way.
+
+P.S: Views and opinions are my own, not my employer's
