@@ -73,6 +73,8 @@ In practice, production deployments on popular inference servers often combine m
 
 ## 6. Speculative Decoding
 
+![](speculative-decoding.png)
+
 An LLM's autoregressive decoding phase is inherently sequential: each token depends on the previous one. This makes the decode phase latency-bound and hard to parallelize. Speculative decoding attacks this bottleneck.
 
 The core idea: a smaller, faster **draft model** generates several candidate tokens ahead. Then the full **target model** verifies those tokens in a single forward pass (which is parallel, like prefill). Accepted tokens are generated at the faster draft-model speed but validated at target-model quality. Rejected tokens are discarded, and decoding continues from the last accepted position.
@@ -84,6 +86,8 @@ Speculative decoding is currently an active research area, and new, novel techni
 I anticipate that newer and more novel speculative-decoding techniques will become native, first-class features in popular inference frameworks, as many of the newer techniques are currently being explored through subprojects.
 
 ## 7. Disaggregation
+
+![](disaggregation.png)
 
 Prefill and decode stress the hardware very differently. Prefill is compute-bound (processing the entire prompt in parallel) and benefits from high FLOPS. Decode is memory-bandwidth-bound (reading weights for one token at a time) and benefits from high memory bandwidth and large batch sizes.
 
