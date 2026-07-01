@@ -21,7 +21,7 @@ Every inference engine works hard at getting scheduling right, because it direct
 
 ## 2. KV Cache Management
 
-Once a token has been processed through the model's attention layers, its computed key and value vectors are cached so they don't need to be recomputed at every subsequent step. This KV cache becomes the dominant working memory during serving, often consuming more GPU memory than the model weights themselves. Managing this KV cache is the second most critical capability:
+Once a token has been processed through the model's attention layers, its computed key and value vectors are cached so they don't need to be recomputed at every subsequent step. In long-context or high-concurrency serving, KV cache can become the dominant working memory, sometimes exceeding the model weights themselves. Managing this KV cache is the second most critical capability:
 
 - **Paged attention** -- borrowed conceptually from OS virtual memory, paged attention allocates KV cache in fixed-size blocks rather than contiguous per-request buffers. This reduces memory fragmentation, allows more requests to fit in memory simultaneously, and prevents out-of-memory errors that would otherwise force request rejection.
 - **Prefix caching** -- many requests share common prefixes (system prompts, few-shot examples, shared document context). Prefix caching detects these overlaps and reuses the cached KV blocks instead of recomputing them, saving both compute and memory. Different inference engines use different data structures to manage and retrieve these common prefixes. SGLang, for example, calls its prefix-caching mechanism **RadixAttention**, because it uses a radix trie.
