@@ -17,6 +17,8 @@ Scheduling is the most fundamental feature of an LLM inference engine. At its co
 
 Every inference engine works hard at getting scheduling right, because it directly drives the trade-offs between throughput, latency, SLOs, fairness, and memory pressure. Most of the other features in this post exist to give the scheduler more room to make those trade-offs well.
 
+![](scheduling.png)
+
 ## 2. KV Cache Management
 
 Once a token has been processed through the model's attention layers, its computed key and value vectors are cached so they don't need to be recomputed at every subsequent step. This KV cache becomes the dominant working memory during serving, often consuming more GPU memory than the model weights themselves. Managing this KV cache is the second most critical capability:
