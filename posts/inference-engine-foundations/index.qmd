@@ -48,7 +48,7 @@ Without all of this kernel and compiler work, the scheduler and KV cache manager
 
 Without quantization, serving LLMs at scale would probably be impossible. Quantization directly addresses the memory-bandwidth and footprint battle. It reduces the LLM's footprint, so that sometimes it can be loaded onto a single GPU's memory, and it reduces memory-bandwidth pressure, which especially helps the decode phase of LLM serving.
 
-- **Weight quantization** -- reducing model weights from FP16 to INT8, INT4, or even lower bit-widths cuts memory footprint proportionally. A 70B-parameter model at FP16 needs ~140 GB; at INT4, it fits in ~35 GB. This is the difference between needing 4 GPUs and needing 1.
+- **Weight quantization** -- reducing model weights from FP16 to INT8, INT4, or even lower bit-widths cuts memory footprint proportionally. A 70B-parameter model at FP16 needs ~140 GB, but at INT4 it fits in ~35 GB. Depending on the GPU's memory, that can be the difference between needing multiple GPUs and a single one.
 - **KV cache quantization** -- quantizing the KV (key-value) cache to FP8 or INT8 can significantly reduce its memory footprint. More recent work like **TurboQuant** pushes this further, quantizing the KV cache to as low as 3 or 4 bits and dequantizing back to bf16 for the attention computation.
 
 Modern inference engines offer various quantization algorithms, such as **GPTQ**, **AWQ**, and **FP8**, covering both weight-only and weight-plus-activation quantization, through multiple quantization libraries and tools such as **NVIDIA's Model Optimizer** and **AMD's Quark**, and they support both offline and online quantization. More recently, 4-bit formats such as **NVFP4** and **MXFP4** have been gaining ground for the latest LLMs.
