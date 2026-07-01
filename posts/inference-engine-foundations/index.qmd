@@ -42,7 +42,7 @@ Now, the user of an inference engine should not have to worry about developing o
 Beyond optimized kernels, a few other techniques are integrated inside the modern inference server.
 
 - **CUDA/HIP graphs** -- the CPU overhead of launching many small GPU kernels per step adds up, and this is very common in the LLM decode phase, where the LLM generates one token at a time. CUDA/HIP graph capture records a sequence of kernel launches once and replays them with minimal CPU involvement, reducing per-step overhead and noticeably cutting the latency of request completion.
-- **Compiler paths** -- PyTorch's **torch.compile** and related compiler infrastructure can fuse operations, eliminate memory copies, and generate optimized code for patterns that don't have a hand-written kernel. This is a popular path when you want to write your own custom kernel with a unique prologue or epilogue that can be accelerated on the GPU.
+- **Compiler paths** -- PyTorch's **torch.compile** infrastructure and **Triton**-based code generation can fuse operations, reduce memory movement, and generate optimized code for patterns that do not have a hand-written kernel. This is an effective path when you want to write a custom kernel with a unique prologue or epilogue that can be accelerated on the GPU.
 
 Without all of this kernel and compiler work, the scheduler and KV cache manager would just be orchestrating requests on hardware that never gets anywhere near its real performance potential.
 
