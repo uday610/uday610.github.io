@@ -21,7 +21,7 @@ Every inference engine works hard at getting scheduling right, because it direct
 
 ## 2. KV Cache Management
 
-Once a token has been processed through the model's attention layers, its computed key and value vectors are cached so they don't need to be recomputed at every subsequent step. This KV cache becomes the dominant working memory during serving, often consuming more GPU memory than the model weights themselves. Managing this KV cache is the second most critical capability:
+Once a token has been processed through the model's attention layers, its computed key and value vectors are cached so they don't need to be recomputed at every subsequent step. In long-context or high-concurrency serving, KV cache can become the dominant working memory, sometimes exceeding the model weights themselves. Managing this KV cache is the second most critical capability:
 
 - **Paged attention** -- borrowed conceptually from OS virtual memory, paged attention allocates KV cache in fixed-size blocks rather than contiguous per-request buffers. This reduces memory fragmentation, allows more requests to fit in memory simultaneously, and prevents out-of-memory errors that would otherwise force request rejection.
 - **Prefix caching** -- many requests share common prefixes (system prompts, few-shot examples, shared document context). Prefix caching detects these overlaps and reuses the cached KV blocks instead of recomputing them, saving both compute and memory. Different inference engines use different data structures to manage and retrieve these common prefixes. SGLang, for example, calls its prefix-caching mechanism **RadixAttention**, because it uses a radix trie.
@@ -42,7 +42,7 @@ Now, the user of an inference engine should not have to worry about developing o
 Beyond optimized kernels, a few other techniques are integrated inside the modern inference server.
 
 - **CUDA/HIP graphs** -- the CPU overhead of launching many small GPU kernels per step adds up, and this is very common in the LLM decode phase, where the LLM generates one token at a time. CUDA/HIP graph capture records a sequence of kernel launches once and replays them with minimal CPU involvement, reducing per-step overhead and noticeably cutting the latency of request completion.
-- **Compiler paths** -- PyTorch's **torch.compile** and related compiler infrastructure can fuse operations, eliminate memory copies, and generate optimized code for patterns that don't have a hand-written kernel. This is a popular path when you want to write your own custom kernel with a unique prologue or epilogue that can be accelerated on the GPU.
+- **Compiler paths** -- PyTorch's **torch.compile** infrastructure and **Triton**-based code generation can fuse operations, reduce memory movement, and generate optimized code for patterns that do not have a hand-written kernel. This is an effective path when you want to write a custom kernel with a unique prologue or epilogue that can be accelerated on the GPU.
 
 Without all of this kernel and compiler work, the scheduler and KV cache manager would just be orchestrating requests on hardware that never gets anywhere near its real performance potential.
 
@@ -67,36 +67,34 @@ A model and its KV cache often won't fit on a single GPU. Distributed inference 
 
 **Context parallelism**, also called **Sequence parallelism (CP/SP)** especially in the prefill phase, distributes the sequence dimension across GPUs. It is very useful when a very long prompt would otherwise make the prefill stage hurt TTFT, and techniques such as **Ring Attention** are adopted for efficient prefill context parallelism. In the decode phase, context parallelism essentially shards the KV cache across the KV heads and along the token-sequence dimension, which is especially useful for MLA- or MQA-based LLMs. Context parallelism helps address a large-batch KV cache that would otherwise overflow a single GPU's capacity.
 
-**Expert parallelism (EP)** distributes the experts of an MoE model across different GPUs. It is commonly combined with other parallelism strategies, including tensor parallelism, which can be applied to the experts themselves (a single expert sharded across multiple GPUs) as well as to the shared layers.
+**Expert parallelism (EP)** distributes the experts of an MoE model across different GPUs. It is commonly combined with other parallelism strategies, including tensor parallelism, which can be applied to the experts themselves (a single expert sharded across multiple GPUs) as well as to the shared layers. Because each token is routed to only a few selected (top-k) experts that may live on any GPU, EP depends on a sparse all-to-all communication pattern, handled by optimized libraries such as **DeepEP** or AMD's **MoRI-EP**. This has become a very active area for the latest large sparse MoE models. Both vLLM and SGLang implement techniques such as **wide-EP**, which combines EP with data parallelism to spread experts across many GPUs, and **dual-batch overlap (DBO)**, a microbatching strategy that overlaps compute with the collective communication to keep GPU utilization high, deployed through higher-level deployment stacks such as **llm-d** and NVIDIA **Dynamo** across multi-node clusters.
 
 In practice, production deployments on popular inference servers often combine multiple strategies (e.g., TP within a node + PP across nodes, or TP + EP for large MoE models).
 
 ## 6. Speculative Decoding
 
-![](speculative-decoding.png)
-
 An LLM's autoregressive decoding phase is inherently sequential: each token depends on the previous one. This makes the decode phase latency-bound and hard to parallelize. Speculative decoding attacks this bottleneck.
 
-The core idea: a smaller, faster **draft model** generates several candidate tokens ahead. Then the full **target model** verifies those tokens in a single forward pass (which is parallel, like prefill). Accepted tokens are generated at the faster draft-model speed but validated at target-model quality. Rejected tokens are discarded, and decoding continues from the last accepted position.
+The core idea: a smaller, faster **draft model** generates several candidate tokens ahead. Then the full **target model** verifies those tokens in a single forward pass (which is parallel, like prefill). Accepted tokens are generated at the faster draft-model speed but validated at target-model quality. Rejected tokens are discarded, and decoding continues from the last accepted position. This can improve time-to-completion latency while preserving the target model’s output distribution, although batching and numerical differences can still introduce small deviations in practice.
 
-This can deliver a latency improvement in time-to-completion without changing model output quality, since the verification step guarantees that the output distribution matches the target model.
-
-Speculative decoding is currently an active research area, and new, novel techniques are evolving very frequently. The **EAGLE-3** technique has been adopted inside popular inference frameworks; it is target-conditioned (the target model's hidden layers act as the draft model) and provides a higher acceptance rate. Newer techniques such as **DFlash** and **P-EAGLE** try to improve speed further through concurrent drafting. **Speculative Speculative Decoding (SSD)** takes another approach to improving speed, attempting to eliminate the phase-locked split between the drafting phase and the verification phase by overlapping them. DeepSeek just came up with another improvement technique, **DSpark**, which introduces semi-autoregressive generation with confidence-scheduled verification.
+Speculative decoding is currently an active research area, and new, novel techniques are evolving very frequently. The **EAGLE-3** technique has been adopted inside popular inference frameworks; it is target-conditioned (the target model's hidden layers act as the draft model) and provides a higher acceptance rate. Newer techniques such as **DFlash** and **P-EAGLE** try to improve speed further through concurrent drafting. **Speculative Speculative Decoding (SSD)** takes another approach to improving speed, attempting to eliminate the phase-locked split between the drafting phase and the verification phase by overlapping them. DeepSeek just came up with another emerging improvement technique, **DSpark**, which introduces semi-autoregressive generation with confidence-scheduled verification.
 
 I anticipate that newer and more novel speculative-decoding techniques will become native, first-class features in popular inference frameworks, as many of the newer techniques are currently being explored through subprojects.
 
-## 7. Disaggregation
+![](speculative-decoding.png)
 
-![](disaggregation.png)
+## 7. Disaggregation
 
 Prefill and decode stress the hardware very differently. Prefill is compute-bound (processing the entire prompt in parallel) and benefits from high FLOPS. Decode is memory-bandwidth-bound (reading weights for one token at a time) and benefits from high memory bandwidth and large batch sizes.
 
-Running both phases on the same GPU means the hardware is never optimally utilized for either workload. Disaggregation separates them and uses distinct GPU pools for prefill and decode, optimized differently. Prefill GPUs are optimized for raw FLOPS and compute saturation, whereas decode GPUs are optimized for maximum data-transfer rate, low latency, and caching. The KV cache transfer between the pools is handled by efficient libraries such as Nvidia's **NIXL**, AMD's **MoRI-IO**, **LMCache**, and **Mooncake**, working with the inference engines.
+Running both phases on the same GPU can create interference. Long prefill work hurts decode interactivity, while decode-heavy traffic underutilizes compute. Disaggregation separates them and uses distinct GPU pools for prefill and decode, optimized differently. Prefill GPUs are optimized for raw FLOPS and compute saturation, whereas decode GPUs are optimized for maximum data-transfer rate, low latency, and caching. The KV cache transfer between the pools is handled by efficient libraries such as Nvidia's **NIXL**, AMD's **MoRI-IO**, **LMCache**, and **Mooncake**, working with the inference engines.
 
 Disaggregation is a relatively new addition to LLM serving engines, but the trend is growing. We are seeing specialized accelerators for the decode phase, and even more fine-grained disaggregation between different parts of the LLM, such as **AFD (attention-feedforward disaggregation)**. Disaggregation is even being used in more advanced use cases, such as **EPD** disaggregation for VLMs, where the Encode, Prefill, and Decode phases are disaggregated, or splitting the draft phase from the verification phase in speculative decoding.
+
+![](disaggregation.png)
 
 ---
 
 ## Wrapping Up
 
-I hope this high-level overview of an inference engine's core capabilities gives you a breadth-first view of the essential inference techniques. This field is clearly growing fast, and new capabilities are constantly being added to the popular inference engines, such as serving multimodal and omnimodal LLMs, constrained decoding to support tool-calling integration for agentic applications, and multi-LoRA serving. But to get the best performance per dollar and performance per watt, it is these core foundational features that get tuned and that new techniques get experimented on. Understanding them gives you a mental framework for evaluating any inference engine against your own LLM serving needs.
+I hope this high-level overview of an inference engine's core capabilities gives a breadth-first view of the essential inference techniques. This field is clearly growing fast, and new capabilities are constantly being added to the popular inference engines, such as serving multimodal and omnimodal LLMs, constrained decoding to support tool-calling integration for agentic applications, and multi-LoRA serving. But to get the best performance per dollar and performance per watt, it is these core foundational features that get tuned and that new techniques get experimented on. Understanding them gives a mental framework for evaluating any inference engine against your own LLM serving needs.
