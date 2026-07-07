@@ -2,7 +2,6 @@
 title: "Disaggregated Inference"
 date: "2026-07-05"
 categories: [LLM, inference, disaggregated inference, systems]
-draft: true
 ---
 
 Disaggregated Inference (DI), also known as disaggregated serving, disaggregated prefilling, or P/D (prefill/decode) disaggregation, is an LLM serving architecture that separates the prefill and decode phases of inference onto different hardware resources. Compared to other LLM inference techniques, disaggregated inference is a relatively new and trending paradigm. Since this is a fast-moving area, in this post I will cover a higher-level conceptual view of DI, considerations for using it in production systems, and the recent trends as I see them.
@@ -38,6 +37,8 @@ In a distributed and disaggregated inference system, we deal with a few more gra
 - Prefill pools contain servers dedicated to the prefill workload.
 - Decode pools contain servers dedicated to the decode workload.
 - KV connectors or transfer engines move KV cache data from prefill workers to decode workers in the data plane.
+
+![Disaggregated serving flow: the router sends prompts to the prefill pool, the KV cache transfers to the decode pool over the fast fabric, and generated tokens return through the router. The autoscaler adjusts the xP:yD ratio.](images/disaggregation.png){#fig-diflow width=90%}
 
 Disaggregated inference introduces a **co-scheduling problem**: prefill and decode workers are separate but tightly coupled, so their placement, scaling, and routing all need to be coordinated rather than handled independently. The three main components, the router, the autoscaler, and the Kubernetes scheduler, each help with this at a different level.
 
