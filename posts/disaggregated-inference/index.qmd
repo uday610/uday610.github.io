@@ -6,7 +6,7 @@ categories: [LLM, inference, disaggregated inference, systems]
 
 Disaggregated Inference (DI), also known as disaggregated serving, disaggregated prefilling, or P/D (prefill/decode) disaggregation, is an LLM serving architecture that separates the prefill and decode phases of inference onto different hardware resources. Compared to other LLM inference techniques, disaggregated inference is a relatively new and trending paradigm. Since this is a fast-moving area, in this post I will cover a higher-level conceptual view of DI, considerations for using it in production systems, and the recent trends as I see them.
 
-### Background and Motivation
+### Background and motivation
 
 It is fairly well known that LLM inference has two distinct phases of execution, prefill and decode, each with different requirements. Still, a couple of lines to recap. The prefill phase is when the LLM processes all the input tokens together; it is compute-heavy and relies on dense matrix-matrix multiplication. Modern GPU kernels have gradually improved over the last few years to tackle the compute challenge of the prefill phase. The decode phase, on the other hand, is when the LLM generates one token at a time, and it becomes extremely memory-bound: for every token, the LLM has to read all the weights from memory, and it does very little compute, since it relies on matrix-vector multiplication.
 
@@ -23,7 +23,7 @@ Beyond that primary benefit, a disaggregated setup brings a few additional ones:
 
 It is worth remembering that disaggregated inference is not free. It adds scheduling, routing, scaling, and KV cache transfer challenges, as discussed in the remaining sections. So it is important to weigh these extra costs against a colocated setup. In colocated inference, chunked prefill is a well-known technique that mitigates the same head-of-line blocking issue, splitting a long prefill so it does not stall the steady-state decode speed.
 
-### Scheduling, Routing, and Scaling Considerations
+### Scheduling, routing, and scaling Considerations
 
 In a Kubernetes-native distributed inference system, there are usually a few main components:
 
@@ -72,7 +72,7 @@ For sparse-attention models such as **DeepSeek-V3 with DeepSeek Sparse Attention
 
 In a disaggregated setup with many servers running, reusing the KV cache across all of them efficiently becomes very important. A **KV cache management layer** such as **LMCache** turns the KV cache from a temporary artifact into a reusable, persistently stored asset that can be shared across multiple serving engines. It moves KV cache out of GPU memory into a tiered storage hierarchy spanning CPU memory, local storage, and remote backends. This offers a **decoupled handoff** instead of a strict point-to-point transfer from prefill worker to decode worker, and offloading KV cache off the decode workers also helps sustain high throughput. In today's agentic workloads, with massive documents, long histories, or multi-turn conversations, the generated KV cache can be reused this way, avoiding repeated prefill compute. **Mooncake Store** can serve as a distributed backend for this, providing a shared KV cache pool that LMCache manages: a high-performance remote store that decides how to keep and retrieve the cache quickly and reliably.
 
-### MoE and Multimodal models
+### MoE and multimodal models
 
 Disaggregated inference is now entering the mainstream through popular inference engines such as vLLM and SGLang, which support it within a node along with efficient KV cache transfer through various KV connectors. Serving frameworks such as Dynamo and llm-d sit on top of these engines and add disaggregation-aware scheduling, routing, and autoscaling inside Kubernetes-class clusters. Some model families such as **MoE** and **multimodal** models can benefit from disaggregation even more.
 
