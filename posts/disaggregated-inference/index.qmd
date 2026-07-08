@@ -23,7 +23,7 @@ Beyond that primary benefit, a disaggregated setup brings a few additional ones:
 
 It is worth remembering that disaggregated inference is not free. It adds scheduling, routing, scaling, and KV cache transfer challenges, as discussed in the remaining sections. So it is important to weigh these extra costs against a colocated setup. In colocated inference, chunked prefill is a well-known technique that mitigates the same head-of-line blocking issue, splitting a long prefill so it does not stall the steady-state decode speed.
 
-### Scheduling, routing, and scaling Considerations
+### Scheduling, routing, and scaling considerations
 
 In a Kubernetes-native distributed inference system, there are usually a few main components:
 
