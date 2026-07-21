@@ -1,4 +1,10 @@
-﻿Since 2025, Mixture of experts became a popular architecture of the latest LLM. MoE packs the intelligent by keeping a steady compute budget. An MoE layer replace the traditional dense feedforward layer with multiple specialized “expert” layers. When each token is propagated, only a subset of the MoE layers are activated. Each input token is processed by only the top-k most relevant experts (typically k=1-8), as determined by a learned router. This selection mechanism allows models to pack more intelligence by billions of parameters but computing only a fraction of them. This essentially breaks the linear relationship between model size and the compute costs. Due to this computational benefits, the MoE architecture become very popular and adopted significantly accross the industry. latest GLM, Deepseek, MinMax, Kimi, Gemma-4, Nemotron-3 they all have MoE variants.
+---
+draft: true
+---
+
+
+ 
+Since 2025, Mixture of experts became a popular architecture of the latest LLM. MoE packs the intelligent by keeping a steady compute budget. An MoE layer replace the traditional dense feedforward layer with multiple specialized “expert” layers. When each token is propagated, only a subset of the MoE layers are activated. Each input token is processed by only the top-k most relevant experts (typically k=1-8), as determined by a learned router. This selection mechanism allows models to pack more intelligence by billions of parameters but computing only a fraction of them. This essentially breaks the linear relationship between model size and the compute costs. Due to this computational benefits, the MoE architecture become very popular and adopted significantly accross the industry. latest GLM, Deepseek, MinMax, Kimi, Gemma-4, Nemotron-3 they all have MoE variants.
 
 However, even if MoE address the compute, it puts challenge in terms of memory. For every token the sheer amount of weights have to be loaded in the GPU memory. Today most of the MoE Models are very large that cannot be fit into a single GPU. Hence there are parallelism and other inference optimization techniques are getting adopted specifically to address MoE model scaling. 
 
