@@ -1,8 +1,10 @@
 ---
 title: "Mixture-of-Experts Inference"
-date: "2026-07-25"
+date: "Draft"
 categories: [LLM, inference, MoE]
 ---
+
+Draft
 
 Since 2025, Mixture of Experts (MoE) has become a popular architecture for recent LLMs. MoE packs more capacity into a model while keeping the compute budget steady. An MoE layer replaces the traditional dense feedforward layer with multiple specialized "expert" layers, and for each token only a subset of the experts are activated. Each token is processed by the top-k most relevant experts (typically k=1-8), chosen by a learned router. This lets a model hold billions of parameters but compute only a fraction of them for any given token, which breaks the linear relationship between model size and compute cost. Because of this benefit, MoE has been widely adopted across the industry. Recent model families like GLM, DeepSeek, MiniMax, Kimi, Gemma 4, and Nemotron 3 all have MoE variants.
 
