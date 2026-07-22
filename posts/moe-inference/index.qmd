@@ -64,9 +64,9 @@ The routed-expert dispatch and combine can also be overlapped with the shared-ex
 
 **Optimized kernels for MoE**: Once the dispatched tokens reach their experts, fast, low-latency compute becomes important inside each expert. Each expert runs its own feedforward GEMM. These GEMMs have irregular shapes and are often very small during decode. Running them separately with a standard GEMM kernel leads to poor GPU utilization and high kernel-launch overhead. Specialized MoE kernels solve this with a few variants:
 
-1. Grouped GEMM: runs the matrix multiplications for many experts with different token counts in one kernel.
-2. Fused MoE kernel: combines steps like router top-k selection, token permutation, the GEMMs, and activation into one larger kernel.
-3. Low-precision GEMM kernel: uses low precision such as FP8 or FP4 to reduce compute and memory cost.
+1. **Grouped GEMM**: runs the matrix multiplications for many experts with different token counts in one kernel.
+2. **Fused MoE kernel**: combines steps like router top-k selection, token permutation, the GEMMs, and activation into one larger kernel.
+3. **Low-precision GEMM kernel**: uses low precision such as FP8 or FP4 to reduce compute and memory cost.
 
 **Prefill and decode kernel layouts**: The two phases send very different numbers of tokens to each expert, so they need different token layouts for the expert GEMM.
 
