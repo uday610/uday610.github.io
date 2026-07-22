@@ -80,7 +80,7 @@ Decode usually has few tokens, giving small expert GEMMs that are sensitive to l
 
 Depending on the workload, some experts receive more tokens than others. The GPUs holding popular experts get overloaded with both communication and computation, while others sit underused. The MoE layer cannot finish until the busiest GPU is done, so one overloaded GPU becomes the straggler while the rest wait idle. This raises layer latency and lowers overall throughput.
 
-**Expert Parallelism Load Balancer (EPLB)**: DeepSeek's EPLB addresses this by replicating popular experts and spreading the copies across GPUs. The idea is simple: add some redundant GPU slots and use them for copies of the busy experts. EPLB receives estimated expert loads, commonly derived from a moving average of historical routing statistics, and replicates the higher-load experts by copying their weights into the redundant slots.
+**Expert Parallelism Load Balancer (EPLB)**: DeepSeek's EPLB addresses this by replicating popular experts and spreading the copies across GPUs. The idea is simple: add some redundant GPU slots and use them for copies of the busy experts. EPLB receives estimated expert loads, commonly derived from a moving average of historical routing statistics, and replicates the higher-load experts by copying their weights into the redundant slots, which evens out the load.
 
 In the **global policy**, EPLB looks across all GPUs on all nodes and can place a replica on any GPU anywhere in the cluster. This is very flexible, but as the cluster grows it can increase cross-node traffic.
 
