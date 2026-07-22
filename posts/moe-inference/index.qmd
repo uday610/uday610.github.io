@@ -8,7 +8,7 @@ Draft
 
 Since 2025, Mixture of Experts (MoE) has become a popular architecture for recent LLMs. MoE packs more capacity into a model while keeping the compute budget steady. An MoE layer replaces the traditional dense feedforward layer with multiple specialized "expert" layers, and for each token only a subset of the experts are activated. Each token is processed by the top-k most relevant experts (typically k=1-8), chosen by a learned router. This lets a model hold billions of parameters but compute only a fraction of them for any given token, which breaks the linear relationship between model size and compute cost. Because of this benefit, MoE has been widely adopted across the industry. Recent model families like GLM, DeepSeek, MiniMax, Kimi, Gemma 4, and Nemotron 3 all have MoE variants.
 
-MoE solves the compute problem, but it creates a memory problem. Even though only a few experts run per token, the full set of expert weights still has to sit in GPU memory. Most MoE models today are far too large to fit on a single GPU, so parallelism is used first to distribute the expert weights across a large fleet of GPUs. But distributing the experts opens new challenges. How do we speed up the communication between GPUs and hide its delay? And how do we handle tokens that flow disproportionately to a few GPUs, causing imbalance and stalls?
+MoE solves the compute problem, but it creates a memory problem. Even though only a few experts run per token, the full set of expert weights still has to be distributed across GPU memory in a standard GPU-resident serving. Most MoE models today are far too large to fit on a single GPU, so parallelism is used first to distribute the expert weights across a large fleet of GPUs. But distributing the experts opens new challenges. How do we speed up the communication between GPUs and hide its delay? And how do we handle tokens that flow disproportionately to a few GPUs, causing imbalance and stalls?
 
 This post works through these challenges in layers, grouped as memory pressure, communication pressure, and imbalance pressure, along with the techniques that have become common for each. Many of the current industry documents are tied to specific inference engines or GPU vendors, with their implementation details. So I will keep this post general, without going into framework-specific knobs or benchmark numbers.
 
@@ -65,7 +65,7 @@ The routed-expert dispatch and combine can also be overlapped with the shared-ex
 **Optimized kernels for MoE**: Once the dispatched tokens reach their experts, fast, low-latency compute becomes important inside each expert. Each expert runs its own feedforward GEMM. These GEMMs have irregular shapes and are often very small during decode. Running them separately with a standard GEMM kernel leads to poor GPU utilization and high kernel-launch overhead. Specialized MoE kernels solve this with a few variants:
 
 1. **Grouped GEMM**: runs the matrix multiplications for many experts resident on the same GPU, with different token counts in one kernel.
-2. **Fused MoE kernel**: combines steps like token permutation, expert GEMMs, activation, and sometimes dispatch/combine token permutation into one larger kernel.
+2. **Fused MoE kernel**: combines steps like token permutation, expert GEMMs, activation, and, in some implementations, EP dispatch and combine into one larger kernel.
 3. **Low-precision GEMM kernel**: uses low precision such as FP8 or FP4 to reduce compute and memory cost.
 
 **Prefill and decode kernel layouts**: The two phases send very different numbers of tokens to each expert, so they need different token layouts for the expert GEMM.
@@ -80,7 +80,7 @@ Decode usually has few tokens, giving small expert GEMMs that are sensitive to l
 
 Depending on the workload, some experts receive more tokens than others. The GPUs holding popular experts get overloaded with both communication and computation, while others sit underused. The MoE layer cannot finish until the busiest GPU is done, so one overloaded GPU becomes the straggler while the rest wait idle. This raises layer latency and lowers overall throughput.
 
-**Expert Parallelism Load Balancer (EPLB)**: DeepSeek's EPLB addresses this by replicating popular experts and spreading the copies across GPUs. The idea is simple: add some redundant GPU slots and use them for copies of the busy experts. EPLB receives estimated historical load statistics for every expert periodically, and replicates the higher-load experts by copying their weights into the redundant slots, which evens out the load.
+**Expert Parallelism Load Balancer (EPLB)**: DeepSeek's EPLB addresses this by replicating popular experts and spreading the copies across GPUs. The idea is simple: add some redundant GPU slots and use them for copies of the busy experts. EPLB receives estimated expert loads, commonly derived from a moving average of historical routing statistics, and replicates the higher-load experts by copying their weights into the redundant slots.
 
 In the **global policy**, EPLB looks across all GPUs on all nodes and can place a replica on any GPU anywhere in the cluster. This is very flexible, but as the cluster grows it can increase cross-node traffic.
 
