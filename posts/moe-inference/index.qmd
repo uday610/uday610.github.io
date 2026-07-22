@@ -10,7 +10,7 @@ Since 2025, Mixture of Experts (MoE) has become a popular architecture for recen
 
 MoE solves the compute problem, but it creates a memory problem. Even though only a few experts run per token, the full set of expert weights still has to sit in GPU memory. Most MoE models today are far too large to fit on a single GPU, so parallelism is used first to distribute the expert weights across a large fleet of GPUs. But distributing the experts opens new challenges. How do we speed up the communication between GPUs and hide its delay? And how do we handle tokens that flow disproportionately to a few GPUs, causing imbalance and stalls?
 
-This post works through these challenges in layers, grouped as memory pressure, communication pressure, and imbalance pressure, along with the techniques that have become common for each. Many of the current industry documents are tied to specific inference engines or GPU vendors, with their implementation details. So I will try to keep this post general, without going into framework-specific knobs or benchmark numbers.
+This post works through these challenges in layers, grouped as memory pressure, communication pressure, and imbalance pressure, along with the techniques that have become common for each. Many of the current industry documents are tied to specific inference engines or GPU vendors, with their implementation details. So I will keep this post general, without going into framework-specific knobs or benchmark numbers.
 
 ## MoE architecture recap
 
