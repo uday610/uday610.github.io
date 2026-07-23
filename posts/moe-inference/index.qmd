@@ -34,6 +34,8 @@ Traditionally, for large models that cannot fit in a single GPU's memory, tensor
 
 In practice, a hybrid TP+EP strategy is very common, where a moderate TP combined with EP gives a more balanced result.
 
+![Tensor parallelism, expert parallelism, and hybrid TP+EP across 8 GPUs for a token that selects experts E1 and E5. Red GPUs take part in computing the token, green GPUs do not.](images/tp-ep-hybrid.png){width=90%}
+
 **EP size in prefill and decode**: The two phases are often configured at different EP sizes in large-scale, optimized MoE serving setups. Prefill processes many tokens at once, so each expert receives a large batch and the expert GEMMs keep the GPUs well utilized even at a small EP size. Decode processes only one new token per request at each step, so expert execution is dominated by loading the expert weights. A larger EP size spreads those weights across more GPUs, reducing the weight each GPU has to read and increasing the aggregate memory bandwidth.
 
 **Wide-EP**: EP taken to a large scale is called wide-EP. Experts are spread across many GPUs, so the per-GPU weight memory drops and more room is left for the KV cache. This suits models with many experts, such as DeepSeek-V3, in long-context serving.
