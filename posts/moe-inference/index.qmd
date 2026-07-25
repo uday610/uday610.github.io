@@ -1,5 +1,5 @@
 ---
-title: "Mixture-of-Experts Inference"
+title: "Mixture-of-Experts Inference: parallelism, communication, and load balancing"
 date: "2026-07-24"
 categories: [LLM, inference, MoE]
 ---
