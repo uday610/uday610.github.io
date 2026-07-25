@@ -104,4 +104,4 @@ MoE keeps the compute budget small, but it moves the cost elsewhere. The weights
 
 Everything above is about the steady-state inference path, a running server on a fixed set of GPUs. Production adds another layer around operation and resilience, and this is where things are moving fast right now. Elastic expert parallelism changes the EP configuration while the server is running. Fault-tolerance work redistributes expert weights onto a new set of GPUs when one drops out. Tiered and pooled expert storage treats HBM, host memory, and pooled memory as one hierarchy and keeps the hot experts near the compute. And there is a push toward vendor-neutral EP communication, with libraries like `UCCL-EP` trying to give the same dispatch-and-combine performance across different GPU and NIC vendors.
 
-MoE inference is still very much a moving target, and I am curious to see how these pieces settle as the models keep getting larger.
+None of these are settled yet, but together they point at the same thing, MoE inference growing up from demos into something we can run in production and depend on.
