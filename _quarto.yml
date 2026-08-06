@@ -13,6 +13,7 @@ website:
 
 format:
   html:
+    reading-time: true
     theme: cosmo
     css: styles.css
     toc: true
