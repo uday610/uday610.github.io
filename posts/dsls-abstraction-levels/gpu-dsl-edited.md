@@ -1,0 +1,116 @@
+---
+draft: true
+---
+
+# GPU kernel DSLs and abstraction levels
+
+Executing frontier models efficiently requires high-performance kernel code that runs on the GPU. Traditionally kernels were written for a few compute intensive operations such as convolution and matrix multiplication. As models became more complex, kernels that combine multiple operations became essential to cut memory traffic between operations, in other words fused kernels. A prime example is the FlashAttention kernel, a carefully designed fused kernel that avoids materializing the full attention matrix, and thus makes the attention operation of LLMs more memory efficient. Writing such kernels for complex and custom models is an extremely difficult engineering job, and maintaining them as the GPU architecture evolves is even harder. New GPU architectures come with new advanced features, for example asynchronous transfer from global memory to shared on-chip memory. The same kernel does not necessarily remain performance portable, and it may not run at its highest potential on the new architecture. So rewriting part of the kernel, such as a schedule adjustment or a micro-architecture change, or sometimes even a complete rewrite from scratch, becomes inevitable.
+
+Because of this there is a trend in the industry to move the abstraction level higher, giving the developer high level constructs that are easier to write, test and maintain. The rise of pythonic DSLs with MLIR and Apache TVM based compilers has become a trend. In this post, I will try to provide a mental map of how these DSLs occupy different abstraction levels. The basis of the map is how much control the developer retains over a few of the GPU programming decisions: data partitioning (tiling), memory read and write, data placement on the hardware (layouts), and scheduling.
+
+## GPU programming decisions
+
+Traditionally GPU programming started with CUDA for NVIDIA GPUs and ROCm for AMD GPUs, which provide maximum control to the user. A kernel writer faces a myriad of important decisions and micro-optimizations to get the best performance out of the GPU. I will go over a few of the important ones that have to be taken upfront to write an efficient GPU kernel. I will go over a few of the important ones that go into writing an efficient GPU kernel, some taken upfront and some settled by iterating.
+
+### Work mapping
+
+Work mapping is the first high-level decision the kernel author takes. It determines the structure of the kernel, what it will be doing and how it maps to execution units like threadblocks (or work-groups). This determines how many threadblocks there will be for the entire workload and what they will do in their lifespan. For example, a naive matrix multiplication can be written so that one threadblock computes one output, but in an efficient implementation one threadblock computes an output tile (a 2D grid of outputs). This tile-based output works well for a square matrix, where M, K and N are roughly the same. A skewed matrix multiplication, where K is much larger than M or N, needs a different structure to create enough parallel work. Here a split-K kernel is more efficient. It generates only a partial output tile by iterating over a portion of the K tiles, and those partial tiles are reduced later to produce the final output. Another structural work mapping example is a persistent kernel, which uses a limited number of threadblocks by explicit scheduling, with each threadblock computing multiple output tiles, amortizing threadblock startup overhead and reducing tail inefficiency.
+
+### Tiling
+
+The tiling decision is made together with the work mapping decision. Tiling decides how to divide the workload into tiles and load them so that each loaded element takes part in as many operations as possible before it is discarded. Taking matrix multiplication as an example, a threadblock (or work-group) computes a 128x128 tile of the output C. It walks the K dimension in steps, in each step loading a 128x32 tile of A and a 32x128 tile of B and accumulating into the same output tile until K is exhausted. So for a loaded A tile, each element feeds 128 multiply-accumulate operations, one for every column in the corresponding loaded B tile, before it is discarded. The same holds for each element of the loaded B tile.
+
+In contrast, a non-tiled version needs a full row of A and a full column of B to produce a single element of C, and every element it loads feeds exactly one multiply-accumulate operation. The tiled version does far more math per element loaded.
+
+On the flip side, larger tiles often consume more shared memory and registers per threadblock, which can reduce the number of threadblocks resident on an SM. This may also reduce the total number of resident warps, lowering occupancy and leaving less room to hide memory latency. So a balanced upfront decision is required.
+
+### Memory movement
+
+Tiling determines how much data is reused per memory access, but how the data is moved is another important part of performance. Traditionally, data movement was more synchronous: load a tile, wait until it is available, compute on it, and then write the result back to global memory.
+
+Modern GPUs provide more asynchronous data movement mechanisms, such as NVIDIA TMA (Tensor Memory Accelerator) or AMD TDM (Tensor Data Mover), to reduce this waiting time. These mechanisms let the kernel prefetch or stream the next tile from global memory into shared memory while the current tile is being computed. This enables pipelining, double buffering, and better overlap between memory movement and compute math, which helps hide memory latency and improves utilization.
+
+### Layouts
+
+A layout is an abstraction that describes how tensor elements are arranged across the different parts of the GPU hardware, such as the memory hierarchy (global memory, shared memory, registers), the SIMD execution lanes, and the tensor core or matrix core. Layouts map tensors around these hardware components. Examples include coalesced global memory access to reduce the number of memory transactions, swizzled or padded shared memory access patterns to reduce bank conflicts, and an MMA pattern to match the tensor core or matrix core requirement. Layouts help kernel authors describe these patterns in a more hardware-intent way.
+
+### Scheduling
+
+Scheduling dictates how operations are overlapped inside the kernel execution. Loops are the primary way to drive scheduling, through pipelining and unrolling. Pipelining helps in hiding latency, while unrolling removes loop-control overhead and exposes more instruction-level parallelism, but may increase register pressure. Balancing the scheduling is one of the key techniques for getting a performant GPU kernel. On newer GPU architectures there is also warp specialization, where different warps are given producer, compute, or store roles so that memory movement and computation can overlap.
+
+## GPU programming DSL landscape
+
+The GPU programming model has evolved over the years. What was traditionally practiced with CUDA and HIP now has plenty of alternatives. The tradeoff is engineering productivity against the ability to control the hardware at different abstraction levels. On one side there is a highly declarative way to offload kernels to the GPU through a machine learning framework. This is called grid-level programming, where the framework or the libraries beneath it automatically split the work into threadblocks, divide the data into tiles, and map them onto threads. At the other extreme is the highly imperative paradigm such as CUDA and HIP, where the user is in full control and responsible for everything. In between these two ends, other DSLs sit at various abstraction and control levels.
+
+### CUDA/HIP
+
+CUDA and HIP are GPU programming models based on C++ language extensions, from NVIDIA and AMD respectively. They remain relevant for anyone building a foundation in GPU programming, and for experts who need control all the way down to the individual thread. The developer divides the grid (the complete workload) into a number of threadblocks, and decides the number of threads per threadblock. The GPU hardware scheduler dispatches each threadblock to one of the SMs (streaming multiprocessors) on NVIDIA GPUs, or compute units on AMD GPUs, to run the portion of the workload assigned to that threadblock. CUDA exposes explicit threads to the kernel developer. So the developer has to think from the individual thread perspective, and design the kernel with explicit thread indexing, thread synchronization, and datapath scheduling by ordering and pipelining the operations inside the kernel. This gives maximum control but is tedious and error-prone for large kernel development. For example, a race condition can appear when multiple threads update the same global or shared memory location without proper synchronization or atomic operations. A producer and a consumer can fall out of alignment because of a missing synchronization or fence. Thread divergence can prevent the kernel from reaching its peak compute potential. CUDA and HIP also give explicit memory access and data movement to and from global memory and shared memory. The intermediate values of a kernel are typically allocated to physical registers on the GPU. So the kernel developer has to watch for register pressure, which comes from an excessive number of long lifetime variables or from aggressive loop unrolling. Register pressure can reduce occupancy or cause register spilling, hurting performance.
+
+### CuTe DSL / FlyDSL
+
+Thread-level arithmetic in CUDA or HIP is complicated. Manually computing thread-to-data mappings, shared memory offsets, and per-thread register management is error-prone and hard to maintain. Pythonic DSLs like CuTe (NVIDIA) and FlyDSL (AMD) provide a more abstracted view of the hardware. Instead of doing complex thread arithmetic for thread-to-hardware mapping, these DSLs provide a layout algebra which gives composable (Shape, Stride) abstractions that express tiling, swizzling, and vectorization patterns mathematically. They still give full control over GPU programming down to individual hardware instructions (Tensor Core MMA on NVIDIA, MFMA on AMD), but the layout-based abstraction model is more expressive for kernel authors to develop, read, and maintain. These DSLs mainly use a JIT compilation flow through an MLIR-based compiler pipeline to generate native GPU code. 
+
+### Triton
+
+Triton provides a tile abstraction for GPU programming, which is much easier than the traditional SIMT level (CUDA/HIP) or the layout based level (CuTe/FlyDSL). In Triton the kernel author still does the work mapping, but writes the kernel from the perspective of the whole tile. A tile is an abstraction of multidimensional data, for example in_vec[0:1023] or a two dimensional matrix chunk of 16x64 elements. A kernel is launched as programs, each running on the GPU with a different tile of the data. Compared to CUDA/HIP or CuTe/FlyDSL, Triton provides two special advantages:
+
+1. Portability: Triton is a JIT compiler based DSL. Its front-end Triton IR (TTIR) captures the relatively high-level syntax of Triton and is GPU agnostic. The great advantage of this is that it avoids GPU vendor lock-in. For example, a Triton kernel can be ported from an NVIDIA GPU to an AMD GPU and back relatively easily.
+2. Easier to write: memory access is automatically managed. For example, the kernel author does not need to think about memory coalescing for global memory access, or handle shared memory access conflicts between threads. The idea is that the compiler is capable enough to do those tasks for the author, targeting different GPU architectures.
+
+**Triton autotuning**: Triton automates the mapping of tile elements to individual threads. But the kernel author still needs to choose the performance critical parameters, such as the tile size, the number of warps used by a program, and the number of pipeline stages. For a performance critical kernel such as GEMM, several of these parameters decide the peak performance. The tile size follows from the size of M, N and K. On top of that there is the grouping of M to maximize on-chip L2 memory reuse, the number of warps, and the number of pipeline stages. The developer can choose these by hand. Triton also provides an autotuning feature, where the kernel author specifies a range of parameters. Autotuning then builds the kernels on the fly through JIT compilation, evaluates them, and picks the best one.
+
+GPU programming decision note: most of the DSLs including Triton keep work mapping and tiling with the author. The difference comes in the other three decisions: layouts, memory movement, and scheduling. Triton takes layouts and memory movement away from the kernel author and drives them through the compiler. The kernel author does not decide how elements are distributed across lanes and registers, and does not need to arrange coalesced access or avoid shared memory bank conflicts. Scheduling is also mainly compiler driven, though Triton provides some knobs to influence it, such as the number of warps and pipeline stages, and autotuning can search those for the kernel author. The price of this is losing low-level control.
+
+### Gluon
+
+Triton has become very popular since OpenAI open-sourced it in 2021, and over the last five years it has moved tile based programming to a higher level of abstraction. However, it hides explicit layout placement and lets the author write tile-level code, leaving the compiler to map that onto layouts which are very much GPU architecture specific. That also takes away some of the control needed to get the maximum possible performance from the latest GPU architectures, warp specialization in particular (automatic warp specialization in Triton is currently under development).
+
+Gluon is a DSL exposing Triton's Triton GPU IR. In Triton, code is lowered through Triton IR (portable across GPU architectures), then Triton GPU IR (GPU-architecture specific), then LLVM, and finally NVIDIA PTX or AMDGCN. Gluon sits on top of Triton GPU IR and gives kernel authors a lower-level entry point with more explicit hardware control than Triton. The major abstraction Gluon exposes is explicit layouts, such as Blocked (for coalesced global memory access), shared swizzled or padded (to avoid shared-memory bank conflicts), and MMA (to match tensor-core register requirements). Kernel authors use these explicit layouts to map tensors onto the hardware. Gluon also exposes warp specialization, explicit shared memory management, and architecture-specific intrinsics. This gives authors fine-grained hardware control while still adhering to Triton's SPMD programming model, which operates at a higher abstraction level than CUDA's SIMT programming model.
+
+GPU programming decision note: Gluon keeps all the decisions that Triton keeps with the author, and gives back control over layouts, memory movement, and warp roles. Gluon layouts are a predefined set rather than an open algebra like CuTe. The cost is portability, since a Gluon kernel is written against a specific architecture's layouts.
+
+### TLX
+
+TLX from Meta is a Triton extension DSL that provides more explicit scheduling control over Triton's tile-based programming model. It gives developers more explicit scheduling capability over the tiles, such as control over shared-memory management, asynchronous data movement, software pipelining, and warp-group specialization. TLX is generally at a higher abstraction level than Gluon, while still exposing hardware-aware controls that standard Triton hides. Upstream Triton now provides a plugin extension framework, allowing TLX to be installed as a standalone extension and used with unmodified Triton. The same TLX programming model can map to vendor-specific capabilities on NVIDIA and AMD GPUs.
+
+GPU programming decision note: similar in philosophy to Gluon, TLX gives scheduling control and memory movement capability to the kernel author. Unlike Gluon it does not expose explicit layouts, so layouts remain compiler driven.
+
+### TileLang
+
+TileLang follows a similar philosophy to Triton, tile-based GPU programming, but it tries to provide more fine-grained control while retaining Triton's simplicity. It provides composable tile operators such as GEMM, COPY and REDUCE, which can be used to describe the dataflow of the kernel. Most scheduling decisions can be handled by the compiler, but kernel authors can explicitly control them when required. For example, tiles can be explicitly placed in shared memory, or the author can control software pipelining and the number of stages. DeepSeek uses TileLang for several kernels across DeepSeek-V3.2 and DeepSeek-V4.
+
+GPU programming decision note: similar to Triton, memory movement, layouts and scheduling are compiler driven. But the author has the flexibility to override them for the most performance critical part of the kernel. The philosophy is simple: high-level tile operators by default, explicit hardware control when it is needed.
+
+### Helion
+
+Triton is a powerful tile-level programming language for writing custom GPU kernels, but it does not eliminate code rewrites and trial-and-error experiments, even with its autotuning support. Developers still need to manage Triton-specific details such as tensor indexing, kernel arguments, tuning configs, memory access style, and optimization strategy.
+
+Helion is a higher-level DSL, described as "PyTorch with tiles", that further abstracts many Triton-specific coding details. In its initial release in October 2025, it expresses the kernel logic at a higher level, explores a larger autotuning search space, and compiles the selected implementation down to an optimized Triton kernel. Helion attempts to eliminate some of the decisions and manual coding that a Triton developer needs. Examples include selecting the optimal tile size, choosing between coding styles for tensor pointers or multidimensional block pointers, tile grouping for L2 cache reuse, and picking between a regular tile based kernel and a persistent kernel.
+
+GPU programming decision note: as I see it, Helion is Triton with an inferred and expanded search. Like Triton, the compiler handles memory movement and layout mapping. But other key decisions such as tiling and scheduling are determined by an autotuning search. The compiler defines the search space itself, unlike Triton where the kernel author defines it explicitly.
+
+### ML framework based kernel flow, PyTorch and JAX
+
+Popular ML frameworks such as PyTorch and JAX provide the most declarative way of kernel authoring, where every GPU lowering decision is taken by the compiler. PyTorch's torch.compile captures the whole model graph from the PyTorch code and compiles individual operators through its TorchInductor backend. TorchInductor generates Triton code, which is then lowered to GPU code. JAX, on the other hand, requires a pure functional kernel without any side-effects, marked with the jax.jit decorator, which is then compiled to GPU code by the OpenXLA backend. These frameworks also use precompiled kernels available from GPU vendors, such as NVIDIA's cuBLASLt or AMD's hipBLASLt, and several others.
+
+### A few other DSLs
+
+So far I have discussed the DSLs that are either established or sitting at a unique abstraction level. But there are more, as this space is getting crowded. A few worth mentioning:
+
+CUDA Tile is NVIDIA's latest tile based programming language. NVIDIA calls it an array based programming language, where the syntax resembles NumPy array syntax. Fundamentally it is similar to Triton, but native to NVIDIA GPUs.
+
+TIRx is a very recent addition to the family of GPU DSLs, based on the Apache TVM compiler framework. It is similar to Gluon in exposing hardware native layouts, explicit pipelining, synchronization, warp roles, and memory placement. It is also designed as a substrate for other tools, not only for hand-written kernels, with agent-generated kernels and megakernel systems as explicit targets. TileLang has already moved its internal IR to TIRx.
+
+ThunderKittens (for NVIDIA GPUs) and HipKittens (for AMD GPUs) are open source DSLs from a Stanford University research group. They are embedded DSLs, written directly inside CUDA or HIP C++ code. Together AI adopted them for their inference engine kernels.
+
+## DSLs and agentic kernel development
+
+In today's agentic development era, using an agentic workflow to optimize GPU kernels is becoming a common practice. DSLs serve a special role here, acting like a contract that humans can understand and agents can be trained on. An agent harness can be built with a human in the loop and hardware in the loop. The agent writes the kernel, verifies correctness, runs it on the GPU to profile it, reasons about the result, and loops over the performance optimization. This is a very active research area and multiple agentic frameworks have been built. Agentic kernel development already works fairly well for micro-architectural optimization, such as threadblock size, tile size, and memory access patterns. Broader kernel architecture exploration is still less systematic and remains a major area for improvement.
+
+## Wrapping up
+
+The kernel authoring landscape is evolving rapidly. The goal is to lower the entry barrier for custom kernel development, to stay performance portable on new GPU architectures, and to support new models and new operators on older GPUs more easily. One trend is going up in abstraction with autotuning driven tools like Helion. Another is going down, but still with a reasonable abstraction or an override to tune the last bit of performance, like Gluon and TileLang.
+
+Higher abstraction levels, at the tile level and above, also open relatively easier development path to megakernels, where a larger portion of the model execution graph is written inside a single kernel. The result is a persistent kernel with more controlled static scheduling, instead of relying on runtime scheduling across many operators with the kernel launch overhead that brings. This is particularly helpful for low-latency inference and an active line of work.
+
+There is also a trend of backend unification, where different DSLs share the same CUDA or HIP backend. That matters because moving from one DSL to another no longer risks losing GPU vendor support. Kernel authors can start at a higher abstraction level and build the major part of the model with higher level DSLs, supported by agents or autotuning. They can drop to a lower level DSL only for the most performance critical parts. So having more DSL options is not a bad thing. It gives different entry points for different parts of the model, and for different experience levels.
