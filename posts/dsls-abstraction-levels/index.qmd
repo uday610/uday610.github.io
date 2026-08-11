@@ -94,7 +94,7 @@ GPU programming decision note: as I see it, Helion is Triton with an inferred an
 
 ### ML framework based kernel flow, PyTorch and JAX
 
-Popular ML frameworks such as PyTorch and JAX provide the most declarative way of kernel authoring, where every GPU lowering decision is taken by the compiler. PyTorch's torch.compile captures compilable regions of the PyTorch graph. The default compiler backend TorchInductor then schedules and fuses operations where possible and generates kernels, commonly through Triton on GPUs. JAX, on the other hand, follows a pure functional programming model, where functions transformed with jax.jit are compiled for the target hardware through XLA backend. 
+Popular ML frameworks such as PyTorch and JAX provide the most declarative way of kernel authoring, where every GPU lowering decision is taken by the compiler. PyTorch's torch.compile captures compilable regions of the PyTorch graph. The default compiler backend TorchInductor then schedules and fuses operations where possible and generates kernels, commonly through Triton on GPUs. JAX, on the other hand, follows a pure functional programming model, where functions transformed with jax.jit are compiled for the target hardware through the XLA backend. 
 
 These frameworks also use precompiled kernels available from GPU vendors, such as NVIDIA's cuBLASLt or AMD's hipBLASLt, and several others.
 
