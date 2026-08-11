@@ -84,7 +84,7 @@ GPU programming decision note: similar in philosophy to Gluon, TLX gives schedul
 
 TileLang follows a similar philosophy to Triton, tile-based GPU programming, but it tries to provide more fine-grained control while retaining Triton's simplicity. It provides composable tile operators such as GEMM, COPY and REDUCE, which can be used to describe the dataflow of the kernel. Most scheduling decisions can be handled by the compiler, but kernel authors can explicitly control them when required. For example, tiles can be explicitly placed in shared memory, or the author can control software pipelining and the number of stages. DeepSeek uses TileLang for several kernels across DeepSeek-V3.2 and DeepSeek-V4.
 
-GPU programming decision note: The kernel author decides work mapping and tiling through TileLang's tile operators. Memory movement, layouts, and scheduling can be driven by the compiler, but TileLang also gives the author explicit control over these decisions when needed for performance. The philosophy is simple: compiler-driven by default, author-controlled where needed.
+GPU programming decision note: the kernel author decides work mapping and tiling through TileLang's tile operators. Memory movement, layouts, and scheduling can be driven by the compiler, but TileLang also gives the author explicit control over these decisions when needed for performance. The philosophy is simple: compiler-driven by default, author-controlled where needed.
 
 ### Helion
 
