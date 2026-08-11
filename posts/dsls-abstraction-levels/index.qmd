@@ -1,5 +1,7 @@
 ---
-draft: true
+title: "GPU Kernel DSLs and Abstraction Levels"
+date: "2026-08-14"
+categories: [GPU, programming, DSL, compilers]
 ---
 
 # GPU kernel DSLs and abstraction levels
