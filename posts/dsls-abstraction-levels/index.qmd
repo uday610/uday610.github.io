@@ -28,7 +28,7 @@ On the flip side, larger tiles often consume more shared memory and registers pe
 
 Tiling determines how much data is reused per memory access, but how the data is moved is another important part of performance. Traditionally, data movement was more synchronous: load a tile, wait until it is available, compute on it, and then write the result back to global memory.
 
-Modern GPUs provide more asynchronous data movement mechanisms, such as NVIDIA TMA (Tensor Memory Accelerator) or AMD TDM (Tensor Data Mover in the latest MI455x), to reduce this waiting time. These mechanisms let the kernel prefetch or stream the next tile from global memory into shared memory (LDS on AMD GPUs) while the current tile is being computed. This enables pipelining, double buffering, and better overlap between memory movement and compute math, which helps hide memory latency and improves utilization.
+Modern GPUs provide more asynchronous data movement mechanisms, such as **NVIDIA TMA** (Tensor Memory Accelerator) or **AMD TDM** (Tensor Data Mover in the latest MI455x), to reduce this waiting time. These mechanisms let the kernel prefetch or stream the next tile from global memory into shared memory (LDS on AMD GPUs) while the current tile is being computed. This enables pipelining, double buffering, and better overlap between memory movement and compute math, which helps hide memory latency and improves utilization.
 
 ### Layouts
 
