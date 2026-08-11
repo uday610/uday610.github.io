@@ -102,7 +102,7 @@ These frameworks also use precompiled kernels available from GPU vendors, such a
 
 So far I have discussed the DSLs that are either established or sitting at a unique abstraction level. But there are more, as this space is getting crowded. A few worth mentioning:
 
-**CUDA Tile** programming is NVIDIA's tile-based programming model, available through **cuTile Python** and **CUDA Tile C++**. NVIDIA describes cuTile Python as an array-based programming model, where the syntax resembles NumPy array syntax. Fundamentally it is similar to Triton, but native to NVIDIA GPUs.
+**CUDA Tile** programming is NVIDIA's tile-based programming model, available through **cuTile Python** and CUDA Tile C++. NVIDIA describes cuTile Python as an array-based programming model, where the syntax resembles NumPy array syntax. Fundamentally it is similar to Triton, but native to NVIDIA GPUs.
 
 **TIRx** is a very recent addition to the family of GPU DSLs, based on the Apache TVM compiler framework. It is similar to Gluon in exposing hardware native layouts, explicit pipelining, synchronization, warp roles, and memory placement. It is also designed as a substrate for other tools, not only for hand-written kernels, with agent-generated kernels and megakernel systems as explicit targets. TileLang has already moved its internal IR to TIRx.
 
