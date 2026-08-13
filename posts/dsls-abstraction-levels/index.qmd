@@ -20,7 +20,7 @@ Work mapping is the first high-level decision the kernel author takes. It determ
 
 The tiling decision is made together with the work mapping decision. Tiling decides how to divide the workload into tiles and load them so that each loaded element takes part in as many operations as possible before it is discarded. Taking matrix multiplication as an example, a threadblock (or work-group) computes a 128x128 tile of the output C. It walks the K dimension in steps, in each step loading a 128x32 tile of A and a 32x128 tile of B and accumulating into the same output tile until K is exhausted. So for a loaded A tile, each element feeds 128 multiply-accumulate operations, one for every column in the corresponding loaded B tile, before it is discarded. The same holds for each element of the loaded B tile.
 
-In contrast, a non-tiled version needs a full row of A and a full column of B to produce a single element of C, and every element it loads feeds exactly one multiply-accumulate operation. The tiled version does far more math per element loaded.
+In contrast, a non-tiled version needs a full row of A and a full column of B to produce a single element of C, and every element it loads feeds exactly one multiply-accumulate operation. The tiled version does far more math per element loaded from global memory.
 
 On the flip side, larger tiles often consume more shared memory and registers per threadblock, which can reduce the number of threadblocks resident on an SM (or CU/WGP on AMD GPUs). This may also reduce the total number of resident warps (wavefronts on AMD GPUs), lowering occupancy and leaving less room to hide memory latency. So a balanced upfront decision is required.
 
